@@ -112,10 +112,7 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
     g_list_lock.sort_unstable_by_key(|midi_port| (midi_port.num));
     g_list_lock.dedup();
 
-    let m_port_clone = midi_port.clone();
-
     let pid = env.pid();
-
     let mut owned_env = OwnedEnv::new();
 
     std::thread::spawn(move || {
@@ -129,21 +126,16 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
             }
         };
 
-        let _conn_in = midi_in
+        let conn_in = midi_in
             .connect(
                 in_port,
                 "midir-read-input",
-                move |stamp, message, _| {
+                move |timestamp, message, _| {
                     owned_env
                         .send_and_clear(&pid, |the_env| {
-                            // message.encode(the_env)
-
-                            let m_port_clone = m_port_clone.clone();
-
                             MidiMessage {
                                 data: message.to_vec(),
-                                port: m_port_clone,
-                                timestamp: stamp,
+                                timestamp,
                             }
                             .encode(the_env)
                         })
@@ -159,7 +151,7 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
             still_listen = GLOBAL_LISTEN_LIST.lock().unwrap().contains(&midi_port);
         }
 
-        _conn_in.close();
+        conn_in.close();
     });
 
     atoms::ok()
@@ -228,14 +220,13 @@ pub fn subscribe_virtual_input(env: Env, virtual_midi_port: VirtualMidiPort) -> 
     gv_list_lock.dedup();
 
     let pid = env.pid();
-
     let mut owned_env = OwnedEnv::new();
 
     std::thread::spawn(move || {
         let mut midi_in = MidiInput::new("MIDIex input").expect("Midi input");
         midi_in.ignore(Ignore::None);
 
-        let _conn_in = midi_in
+        let conn_in = midi_in
             .create_virtual(
                 &virtual_midi_port.name,
                 move |_stamp, message, _| {
@@ -256,7 +247,7 @@ pub fn subscribe_virtual_input(env: Env, virtual_midi_port: VirtualMidiPort) -> 
                 .contains(&virtual_midi_port);
         }
 
-        _conn_in.close();
+        conn_in.close();
     });
 
     atoms::ok()
@@ -473,7 +464,6 @@ fn send_msg(midi_out_conn: OutConn, message: Binary) -> Result<OutConn, Error> {
 #[derive(NifStruct)]
 #[module = "Midiex.MidiMessage"]
 pub struct MidiMessage {
-    port: MidiPort,
     data: Vec<u8>,
     timestamp: u64,
 }
