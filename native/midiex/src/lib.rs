@@ -134,18 +134,20 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
                 in_port,
                 "midir-read-input",
                 move |stamp, message, _| {
-                    owned_env.send_and_clear(&pid, |the_env| {
-                        // message.encode(the_env)
+                    owned_env
+                        .send_and_clear(&pid, |the_env| {
+                            // message.encode(the_env)
 
-                        let m_port_clone = m_port_clone.clone();
+                            let m_port_clone = m_port_clone.clone();
 
-                        MidiMessage {
-                            data: message.to_vec(),
-                            port: m_port_clone,
-                            timestamp: stamp,
-                        }
-                        .encode(the_env)
-                    }).unwrap();
+                            MidiMessage {
+                                data: message.to_vec(),
+                                port: m_port_clone,
+                                timestamp: stamp,
+                            }
+                            .encode(the_env)
+                        })
+                        .unwrap();
                 },
                 (),
             )
@@ -237,7 +239,9 @@ pub fn subscribe_virtual_input(env: Env, virtual_midi_port: VirtualMidiPort) -> 
             .create_virtual(
                 &virtual_midi_port.name,
                 move |_stamp, message, _| {
-                    owned_env.send_and_clear(&pid, |the_env| message.encode(the_env)).unwrap();
+                    owned_env
+                        .send_and_clear(&pid, |the_env| message.encode(the_env))
+                        .unwrap();
                 },
                 (),
             )
@@ -622,7 +626,6 @@ pub struct NumPorts {
 
 // MIDI IO related
 
-
 pub struct MidiexMidiInputRef(pub Mutex<MidiInput>);
 impl rustler::Resource for MidiexMidiInputRef {}
 
@@ -760,11 +763,7 @@ fn on_load(env: Env, _info: Term) -> bool {
     // MIDI message
     env.register::<MidiMessage>().unwrap();
 
-
     true
 }
 
-rustler::init!(
-    "Elixir.Midiex.Backend",
-    load = on_load
-);
+rustler::init!("Elixir.Midiex.Backend", load = on_load);
