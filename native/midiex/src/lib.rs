@@ -5,11 +5,11 @@ extern crate midir;
 #[macro_use]
 extern crate lazy_static;
 
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use core_foundation::runloop::CFRunLoop;
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use coremidi::Notification::{ObjectAdded, ObjectRemoved};
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use coremidi::{AddedRemovedInfo, Client, Notification, ObjectType};
 
 use std::ops::{Add, DerefMut};
@@ -131,7 +131,7 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
 
         let _conn_in = midi_in
             .connect(
-                &in_port,
+                in_port,
                 "midir-read-input",
                 move |stamp, message, _| {
                     owned_env.send_and_clear(&pid, |the_env| {
@@ -145,8 +145,7 @@ pub fn subscribe(env: Env, midi_port: MidiPort) -> Atom {
                             timestamp: stamp,
                         }
                         .encode(the_env)
-                    });
-                    ()
+                    }).unwrap();
                 },
                 (),
             )
@@ -238,8 +237,7 @@ pub fn subscribe_virtual_input(env: Env, virtual_midi_port: VirtualMidiPort) -> 
             .create_virtual(
                 &virtual_midi_port.name,
                 move |_stamp, message, _| {
-                    owned_env.send_and_clear(&pid, |the_env| message.encode(the_env));
-                    ()
+                    owned_env.send_and_clear(&pid, |the_env| message.encode(the_env)).unwrap();
                 },
                 (),
             )
@@ -266,7 +264,7 @@ pub fn subscribe_virtual_input(env: Env, virtual_midi_port: VirtualMidiPort) -> 
 // Supported on MacOS only at the moment
 // ---------------------------------------
 
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 #[rustler::nif]
 pub fn notifications(env: Env) -> Result<Atom, Error> {
     let pid = env.pid();
@@ -300,7 +298,7 @@ pub fn notifications() -> Result<Atom, Error> {
     )))
 }
 
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 #[rustler::nif]
 pub fn hotplug() -> Result<Atom, Error> {
     std::thread::spawn(move || {
@@ -336,9 +334,9 @@ fn connect(midi_port: MidiPort) -> Result<OutConn, Error> {
         if let MidiexMidiPortRef::Output(port) = &midi_port.port_ref.0 {
             // println!("OUTPUT PORT");
 
-            let conn_out_result = midi_output.connect(&port, "MIDIex");
+            let conn_out_result = midi_output.connect(port, "MIDIex");
 
-            let mut _conn_out = match conn_out_result {
+            match conn_out_result {
                 Ok(conn_out) => {
                     // println!("CONNECTION MADE");
 
@@ -422,9 +420,9 @@ fn create_virtual_output_conn(name: String) -> Result<OutConn, Error> {
     // Just in case added port_ref back into OutConn
     // let new_port: MidiInputPort = midi_input.ports().into_iter().rev().next().unwrap();
 
-    return Ok(OutConn {
+    Ok(OutConn {
         conn_ref: ResourceArc::new(OutConnRef::new(conn_out)),
-        name: name,
+        name,
         port_num: port_index - 1,
         // Just in case port_ref is added back in:
         // midi_port: MidiPort{
@@ -433,7 +431,7 @@ fn create_virtual_output_conn(name: String) -> Result<OutConn, Error> {
         //     num: port_index,
         //     port_ref: ResourceArc::new(FlexiPort::new(MidiexMidiPortRef::Output(MidiOutputPort::clone(&new_port))))
         // }
-    });
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -475,6 +473,7 @@ pub struct MidiMessage {
     data: Vec<u8>,
     timestamp: u64,
 }
+impl rustler::Resource for MidiMessage {}
 
 // =================
 // MIDI Notification
@@ -491,7 +490,9 @@ pub struct MidiNotification {
     direction: Atom,
 }
 
-#[cfg(all(target_os = "macos"))]
+impl rustler::Resource for MidiNotification {}
+
+#[cfg(target_os = "macos")]
 impl MidiNotification {
     pub fn new(notification_type: Atom, info: &AddedRemovedInfo) -> Self {
         let parent_name = match info.parent.name() {
@@ -515,9 +516,9 @@ impl MidiNotification {
         };
 
         Self {
-            notification_type: notification_type,
-            parent_name: parent_name,
-            parent_id: parent_id,
+            notification_type,
+            parent_name,
+            parent_id,
             parent_type: midi_obj_type_to_atom(info.parent_type),
             name: child_name,
             native_id: child_id,
@@ -526,7 +527,7 @@ impl MidiNotification {
     }
 }
 
-#[cfg(all(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 fn midi_obj_type_to_atom(object_type: ObjectType) -> Atom {
     match object_type {
         ObjectType::Other => atoms::other(),
@@ -558,6 +559,7 @@ pub struct OutConn {
 // Use of Option mean ownership of the connection can be taken with .take() and then .closed() can be called.
 
 pub struct OutConnRef(pub Mutex<Option<MidiOutputConnection>>);
+impl rustler::Resource for OutConnRef {}
 
 impl OutConnRef {
     pub fn new(data: MidiOutputConnection) -> Self {
@@ -572,8 +574,10 @@ pub enum MidiexMidiPortRef {
     Input(MidiInputPort),
     Output(MidiOutputPort),
 }
+impl rustler::Resource for MidiexMidiPortRef {}
 
 pub struct FlexiPort(pub MidiexMidiPortRef);
+impl rustler::Resource for FlexiPort {}
 
 impl FlexiPort {
     pub fn new(data: MidiexMidiPortRef) -> Self {
@@ -618,8 +622,12 @@ pub struct NumPorts {
 
 // MIDI IO related
 
+
 pub struct MidiexMidiInputRef(pub Mutex<MidiInput>);
+impl rustler::Resource for MidiexMidiInputRef {}
+
 pub struct MidiexMidiOutputRef(pub Mutex<MidiOutput>);
+impl rustler::Resource for MidiexMidiOutputRef {}
 
 impl MidiexMidiInputRef {
     pub fn new(data: MidiInput) -> Self {
@@ -651,7 +659,7 @@ fn list_ports() -> Result<Vec<MidiPort>, Error> {
         // println!("\nMidi input ports: {:?}\n\r", midi_input.port_count());
 
         for (i, p) in midi_input.ports().iter().enumerate() {
-            let port_name = if let Ok(port_name) = midi_input.port_name(&p) {
+            let port_name = if let Ok(port_name) = midi_input.port_name(p) {
                 port_name
             } else {
                 "No device name given".to_string()
@@ -677,7 +685,7 @@ fn list_ports() -> Result<Vec<MidiPort>, Error> {
         // println!("Midi output ports: {:?}\n\r", midi_output.port_count());
 
         for (i, p) in midi_output.ports().iter().enumerate() {
-            let port_name = if let Ok(port_name) = midi_output.port_name(&p) {
+            let port_name = if let Ok(port_name) = midi_output.port_name(p) {
                 port_name
             } else {
                 "No device name given".to_string()
@@ -694,7 +702,7 @@ fn list_ports() -> Result<Vec<MidiPort>, Error> {
         }
     });
 
-    return Ok(vec_of_devices);
+    Ok(vec_of_devices)
 }
 
 // ------------------------
@@ -724,10 +732,10 @@ fn count_ports() -> Result<NumPorts, Error> {
         num_output_ports = midi_output.port_count();
     });
 
-    return Ok(NumPorts {
+    Ok(NumPorts {
         input: num_input_ports,
         output: num_output_ports,
-    });
+    })
 }
 
 // ------------------------
@@ -736,49 +744,27 @@ fn count_ports() -> Result<NumPorts, Error> {
 
 fn on_load(env: Env, _info: Term) -> bool {
     // MIDI Input and Output object for the OS
-    rustler::resource!(MidiexMidiInputRef, env);
-    rustler::resource!(MidiexMidiOutputRef, env);
+    env.register::<MidiexMidiInputRef>().unwrap();
+    env.register::<MidiexMidiOutputRef>().unwrap();
 
     // MIDI ports (both input and output)
-    rustler::resource!(FlexiPort, env);
-    rustler::resource!(MidiexMidiPortRef, env);
+    env.register::<FlexiPort>().unwrap();
+    env.register::<MidiexMidiPortRef>().unwrap();
 
     // MIDI connection to a MIDI port
-    rustler::resource!(OutConnRef, env);
+    env.register::<OutConnRef>().unwrap();
 
     // MIDI notification
-    rustler::resource!(MidiNotification, env);
+    env.register::<MidiNotification>().unwrap();
 
     // MIDI message
-    rustler::resource!(MidiMessage, env);
+    env.register::<MidiMessage>().unwrap();
+
 
     true
 }
 
 rustler::init!(
     "Elixir.Midiex.Backend",
-    [
-        count_ports,
-        list_ports,
-        connect,
-        close_out_conn,
-        send_msg,
-        subscribe,
-        unsubscribe_all_ports,
-        unsubscribe_port,
-        unsubscribe_port_by_index,
-        create_virtual_output_conn,
-        create_virtual_input,
-        #[cfg(not(any(target_os = "windows")))]
-        subscribe_virtual_input,
-        #[cfg(not(any(target_os = "windows")))]
-        unsubscribe_virtual_port,
-        #[cfg(not(any(target_os = "windows")))]
-        unsubscribe_all_virtual_ports,
-        get_subscribed_ports,
-        get_subscribed_virtual_ports,
-        notifications,
-        hotplug
-    ],
     load = on_load
 );
